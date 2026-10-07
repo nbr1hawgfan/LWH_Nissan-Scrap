@@ -17,6 +17,8 @@
   <script src="app.js" defer></script>
 </head>
 <body>
+  <!-- print-only header -->
+  <div class="print-head" id="printHead"></div>
   <header class="app-header">
     <div class="brand">
       <div class="brand-title">Nissan Scrap Analytics</div>
@@ -72,7 +74,10 @@
         <button type="button" class="seg" data-type="ENGINE" role="radio" aria-checked="false">Engines</button>
         <button type="button" class="seg" data-type="TRANSMISSION" role="radio" aria-checked="false">Transmissions</button>
       </div>
-      <div class="freshness" id="freshness"></div>
+      <div class="filter-foot">
+        <div class="freshness" id="freshness"></div>
+        <button class="btn-export" type="button" id="exportBtn">Export</button>
+      </div>
     </section>
 
     <div id="loading" class="loading" hidden>Loading...</div>
@@ -158,6 +163,69 @@
         </div>
       </div>
       <div class="table-wrap" id="unitTable"></div>
+    </div>
+  </div>
+
+  <!-- export menu -->
+  <div class="modal" id="exportModal" hidden>
+    <div class="modal-box export-box" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
+      <div class="card-head">
+        <h2 id="exportTitle">Export</h2>
+        <button class="btn-small" type="button" id="exportCloseBtn">Close</button>
+      </div>
+      <p class="muted small" id="exportScope"></p>
+
+      <div class="export-list">
+        <div class="export-item">
+          <div>
+            <div class="export-name">Summary workbook</div>
+            <div class="export-desc">Excel file with Summary, Daily, Weekly, By Type and Scrap Loads sheets.</div>
+          </div>
+          <div class="export-actions"><button type="button" class="btn-primary sm" data-export="workbook">Excel</button></div>
+        </div>
+
+        <div class="export-item">
+          <div>
+            <div class="export-name">Printable report</div>
+            <div class="export-desc">Headline numbers, charts and the weekly table. Choose "Save as PDF" in the print window.</div>
+          </div>
+          <div class="export-actions"><button type="button" class="btn-primary sm" data-export="print">Print / PDF</button></div>
+        </div>
+
+        <div class="export-item">
+          <div>
+            <div class="export-name">Daily data</div>
+            <div class="export-desc">One row per day: received, scrapped by route, shipped, on hand, cohort.</div>
+          </div>
+          <div class="export-actions">
+            <button type="button" class="btn-small" data-export="daily-csv">CSV</button>
+            <button type="button" class="btn-small" data-export="daily-xlsx">Excel</button>
+          </div>
+        </div>
+
+        <div class="export-item">
+          <div>
+            <div class="export-name">Scrapped units</div>
+            <div class="export-desc">Every unit scrapped in the range, with item, received date, days to scrap, pro and reference.</div>
+          </div>
+          <div class="export-actions">
+            <button type="button" class="btn-small" data-export="scrapped-csv">CSV</button>
+            <button type="button" class="btn-small" data-export="scrapped-xlsx">Excel</button>
+          </div>
+        </div>
+
+        <div class="export-item">
+          <div>
+            <div class="export-name">Received units with status</div>
+            <div class="export-desc">Every unit received in the range and where it is now: scrapped, shipped, adjusted or on hand.</div>
+          </div>
+          <div class="export-actions">
+            <button type="button" class="btn-small" data-export="received-csv">CSV</button>
+            <button type="button" class="btn-small" data-export="received-xlsx">Excel</button>
+          </div>
+        </div>
+      </div>
+      <p class="export-status" id="exportStatus" role="status"></p>
     </div>
   </div>
 

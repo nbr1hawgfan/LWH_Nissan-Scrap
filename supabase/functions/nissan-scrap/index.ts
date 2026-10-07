@@ -11,6 +11,7 @@
     dashboard   { from, to }   -> meta, start_on_hand, daily rows
     loads       { from, to }   -> scrap loads in range
     load_units  { pro }        -> units on one scrap load
+    units_export { from, to, mode: scrapped/received } -> unit rows
     log         { note }       -> access log entry (exports)
   Deployed with verify_jwt = false: it does its own auth.
 ===========================================================*/
@@ -101,6 +102,19 @@ Deno.serve(async (req) => {
       if (!Number.isInteger(pro) || pro <= 0) return json({ error: "Invalid load." }, 400, origin);
       const { data, error } = await db.rpc("nissan_scrap_load_units", { p_pro: pro });
       if (error) throw error;
+      return json(data, 200, origin);
+    }
+
+    if (action === "units_export") {
+      const r = range(body);
+      if (!r) return json({ error: "Choose a valid date range (up to 3 years)." }, 400, origin);
+      const mode = body.mode === "received" ? "received" : "scrapped";
+      const { data, error } = await db.rpc("nissan_units_export", { p_from: r.from, p_to: r.to, p_mode: mode });
+      if (error) throw error;
+      await db.from("cust_app_access_log").insert({
+        customer_code: CUSTOMER, user_name: s.name,
+        action: `Exported ${data.length} ${mode} units ${r.from} to ${r.to}`,
+      });
       return json(data, 200, origin);
     }
 

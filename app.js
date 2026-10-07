@@ -501,7 +501,264 @@
     a.href = URL.createObjectURL(blob); a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    api("log", { note: logNote }).catch(() => {});
+    if (logNote) api("log", { note: logNote }).catch(() => {});
+  }
+
+  /* =============================================================
+     EXPORTS
+     All exports follow the selected dates and unit type.
+     ============================================================= */
+  const XLSX_URL = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+  let xlsxPromise = null;
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (!xlsxPromise) {
+      xlsxPromise = new Promise((resolve, reject) => {
+        const sc = document.createElement("script");
+        sc.src = XLSX_URL;
+        sc.onload = () => resolve(window.XLSX);
+        sc.onerror = () => { xlsxPromise = null; reject(new Error("Could not load the Excel library. Check your connection and try again.")); };
+        document.head.appendChild(sc);
+      });
+    }
+    return xlsxPromise;
+  }
+
+  const fileTag = () => `${state.type === "BOTH" ? "all" : state.type.toLowerCase()}_${state.from}_${state.to}`;
+  const xDate = (isoStr) => { if (!isoStr) return null; const [y, m, d] = isoStr.split("-").map(Number); return new Date(y, m - 1, d); };
+  const ratio = (a, b) => b ? a / b : null;
+  const STATUS = { "SCRAP": "Scrapped", "SHIPPED": "Shipped", "ADJUSTED": "Adjusted", "ON HAND": "On hand" };
+  const TYPE_NAME = { ENGINE: "Engine", TRANSMISSION: "Transmission", OTHER: "Other" };
+
+  /** Build a worksheet. cols: [{h: header, w: width, f: 'int'|'pct'|'dec'|'date'|'text'}] */
+  function sheet(X, cols, rows, pre) {
+    const top = pre || [];
+    const aoa = top.concat([cols.map((c) => c.h)], rows);
+    const ws = X.utils.aoa_to_sheet(aoa, { cellDates: true });
+    const fmt = { int: "#,##0", pct: "0.0%", dec: "0.0", date: "m/d/yyyy" };
+    const first = top.length + 1;
+    for (let r = first; r < aoa.length; r++) {
+      cols.forEach((c, ci) => {
+        const cell = ws[X.utils.encode_cell({ r, c: ci })];
+        if (cell && fmt[c.f] && cell.t !== "s") cell.z = fmt[c.f];
+      });
+    }
+    ws["!cols"] = cols.map((c) => ({ wch: c.w || 12 }));
+    ws["!autofilter"] = { ref: X.utils.encode_range({ r: top.length, c: 0 }, { r: aoa.length - 1, c: cols.length - 1 }) };
+    return ws;
+  }
+
+  function scopeLines() {
+    const m = (state.dash && state.dash.meta) || {};
+    const synced = m.last_synced_at
+      ? new Date(m.last_synced_at).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
+      : "-";
+    return [
+      ["Nissan Scrap Analytics - Logistics Warehouse, Inc."],
+      ["Date range", `${usDate(state.from)} to ${usDate(state.to)}`],
+      ["Unit type", TYPE_LABEL[state.type]],
+      ["Data updated", synced],
+      ["Exported", new Date().toLocaleString("en-US", { timeZone: "America/Chicago" }) + (state.name ? " by " + state.name : "")],
+      [],
+    ];
+  }
+
+  /* ---------- daily rows (shared by sheet + CSV) ---------- */
+  const DAILY_COLS = [
+    { h: "Date", w: 12, f: "date" }, { h: "Received", f: "int" },
+    { h: "Engines received", w: 16, f: "int" }, { h: "Transmissions received", w: 20, f: "int" },
+    { h: "Scrapped", f: "int" }, { h: "Scrapped - scrap out loads", w: 22, f: "int" }, { h: "Scrapped - scrap references", w: 24, f: "int" },
+    { h: "Engines scrapped", w: 16, f: "int" }, { h: "Transmissions scrapped", w: 20, f: "int" },
+    { h: "Shipped", f: "int" }, { h: "Adjusted", f: "int" }, { h: "On hand (end of day)", w: 18, f: "int" },
+    { h: "Scrapped vs received", w: 18, f: "pct" }, { h: "Cohort scrapped", w: 15, f: "int" }, { h: "Cohort scrap %", w: 14, f: "pct" },
+  ];
+  function dailyRows() {
+    const types = selectedTypes();
+    const eng = new Map(byDate(["ENGINE"]).map((o) => [o.d, o]));
+    const trn = new Map(byDate(["TRANSMISSION"]).map((o) => [o.d, o]));
+    const z = { inb: 0, scrap: 0 };
+    return byDate(types).map((o) => {
+      const e = types.includes("ENGINE") ? (eng.get(o.d) || z) : z;
+      const t = types.includes("TRANSMISSION") ? (trn.get(o.d) || z) : z;
+      return [o.d, o.inb, e.inb, t.inb, o.scrap, o.sl, o.sr, e.scrap, t.scrap, o.sh, o.ad, o.oh,
+        ratio(o.scrap, o.inb), o.cs, ratio(o.cs, o.inb)];
+    });
+  }
+
+  const WEEKLY_COLS = [
+    { h: "Week start", w: 12, f: "date" }, { h: "Week end", w: 12, f: "date" }, { h: "Partial week", w: 12 },
+    { h: "Received", f: "int" }, { h: "Scrapped", f: "int" }, { h: "Scrapped vs received", w: 18, f: "pct" },
+    { h: "Cohort scrapped", w: 15, f: "int" }, { h: "Cohort scrap %", w: 14, f: "pct" },
+    { h: "Avg days to scrap", w: 16, f: "dec" }, { h: "Status", w: 12 },
+  ];
+  const weeklyData = () => weeklyRows().map((w) => [xDate(w.k), xDate(w.end), w.partial ? "Yes" : "", w.inb, w.scrap,
+    ratio(w.scrap, w.inb), w.cs, ratio(w.cs, w.inb), w.cs ? w.csd / w.cs : null, w.status]);
+
+  const LOAD_COLS = [
+    { h: "Scrap date", w: 12, f: "date" }, { h: "Pro", w: 10 }, { h: "Reference", w: 26 }, { h: "Route", w: 16 },
+    { h: "Engines", f: "int" }, { h: "Transmissions", w: 14, f: "int" }, { h: "Units", f: "int" }, { h: "Avg days to scrap", w: 16, f: "dec" },
+  ];
+  const loadData = () => loadRows().map((l) => [xDate(l.out_date), l.out_pro, l.ref_num || "",
+    l.scrap_source === "SCRAP OUT LOAD" ? "Scrap out load" : "Scrap reference",
+    l.engines, l.trans, l.units, l.avg_days == null ? null : Number(l.avg_days)]);
+
+  async function ensureLoadsQuiet() {
+    const key = state.from + "|" + state.to;
+    if (state.loads && state.loadsKey === key) return;
+    state.loads = await api("loads", { from: state.from, to: state.to });
+    state.loadsKey = key;
+  }
+
+  /* ---------- summary workbook ---------- */
+  async function exportWorkbook() {
+    const X = await loadXlsx();
+    await ensureLoadsQuiet();
+    const { s } = summarize(selectedTypes());
+    const dev = rangeDeveloping();
+    const wb = X.utils.book_new();
+
+    const kpiRows = [
+      ["Units received", s.received, "units", `avg ${fmt1(s.opDays ? s.received / s.opDays : null)} per operating day`],
+      ["Units scrapped", s.scrapped, "units", `avg ${fmt1(s.opDays ? s.scrapped / s.opDays : null)} per operating day`],
+      ["  Scrap out loads", s.sl, "units", ""],
+      ["  Scrap references", s.sr, "units", ""],
+      ["Scrapped vs received", ratio(s.scrapped, s.received), "%", "Units scrapped in range / units received in range"],
+      ["Received-unit scrap rate", ratio(s.cs, s.received), "%", (dev ? "DEVELOPING - " : "") + "Of units received in range, share scrapped so far"],
+      ["Received units still on hand", ratio(s.received - s.co, s.received), "%", ""],
+      ["Scrap share of inventory", ratio(s.scrapped, s.available), "%", `Scrapped / ${fmt(s.available)} available (on hand at start + received)`],
+      ["On hand at start", s.startOH, "units", ""],
+      ["On hand at end", s.endOH, "units", ""],
+      ["Average on hand", s.avgOH, "units", ""],
+      ["Avg days to scrap", s.avgDays, "days", "Received to scrapped, units received in range"],
+      ["Operating days", s.opDays, "days", `of ${s.days} calendar days in range`],
+    ];
+    const pre = scopeLines();
+    const sum = X.utils.aoa_to_sheet(pre.concat([["Metric", "Value", "Notes"]], kpiRows.map((r) => [r[0], r[1], r[3]])));
+    kpiRows.forEach((r, i) => {
+      const c = sum[X.utils.encode_cell({ r: pre.length + 1 + i, c: 1 })];
+      if (c && c.t === "n") c.z = r[2] === "%" ? "0.0%" : r[0] === "Avg days to scrap" ? "0.0" : "#,##0";
+    });
+    sum["!cols"] = [{ wch: 30 }, { wch: 14 }, { wch: 70 }];
+    X.utils.book_append_sheet(wb, sum, "Summary");
+
+    // by type (always both types)
+    const typeRow = (label, types) => {
+      const t = summarize(types).s;
+      return [label, t.received, t.scrapped, ratio(t.scrapped, t.received), ratio(t.cs, t.received),
+        ratio(t.scrapped, t.available), t.startOH, t.endOH, t.avgDays];
+    };
+    X.utils.book_append_sheet(wb, sheet(X, [
+      { h: "Type", w: 16 }, { h: "Received", f: "int" }, { h: "Scrapped", f: "int" },
+      { h: "Scrapped vs received", w: 18, f: "pct" }, { h: "Received-unit scrap rate", w: 22, f: "pct" },
+      { h: "Scrap share of inventory", w: 22, f: "pct" }, { h: "On hand at start", w: 15, f: "int" },
+      { h: "On hand at end", w: 14, f: "int" }, { h: "Avg days to scrap", w: 16, f: "dec" },
+    ], [typeRow("Engines", ["ENGINE"]), typeRow("Transmissions", ["TRANSMISSION"]), typeRow("Total", TYPES_ALL)],
+    scopeLines()), "By Type");
+
+    X.utils.book_append_sheet(wb, sheet(X, DAILY_COLS, dailyRows().map((r) => [xDate(r[0])].concat(r.slice(1))), scopeLines()), "Daily");
+    X.utils.book_append_sheet(wb, sheet(X, WEEKLY_COLS, weeklyData(), scopeLines()), "Weekly");
+    X.utils.book_append_sheet(wb, sheet(X, LOAD_COLS, loadData(), scopeLines()), "Scrap Loads");
+
+    X.writeFile(wb, `nissan_scrap_summary_${fileTag()}.xlsx`, { compression: true });
+    api("log", { note: `Exported summary workbook ${state.from} to ${state.to}` }).catch(() => {});
+  }
+
+  /* ---------- daily ---------- */
+  async function exportDaily(asXlsx) {
+    const rows = dailyRows();
+    if (asXlsx) {
+      const X = await loadXlsx();
+      const wb = X.utils.book_new();
+      X.utils.book_append_sheet(wb, sheet(X, DAILY_COLS, rows.map((r) => [xDate(r[0])].concat(r.slice(1))), scopeLines()), "Daily");
+      X.writeFile(wb, `nissan_scrap_daily_${fileTag()}.xlsx`, { compression: true });
+      api("log", { note: `Exported daily data ${state.from} to ${state.to}` }).catch(() => {});
+    } else {
+      const pctTxt = (v) => v == null ? "" : (100 * v).toFixed(1);
+      downloadCsv(`nissan_scrap_daily_${fileTag()}.csv`,
+        [DAILY_COLS.map((c) => c.h)].concat(rows.map((r) => r.map((v, i) => DAILY_COLS[i].f === "pct" ? pctTxt(v) : v))),
+        `Exported daily data ${state.from} to ${state.to}`);
+    }
+  }
+
+  /* ---------- unit level ---------- */
+  const UNIT_COLS = [
+    { h: "LWH ID", w: 11 }, { h: "Item", w: 16 }, { h: "Description", w: 22 }, { h: "Type", w: 13 },
+    { h: "Received", w: 11, f: "date" }, { h: "Status", w: 10 }, { h: "Out date", w: 11, f: "date" },
+    { h: "Days to out", w: 11, f: "int" }, { h: "Pro", w: 10 }, { h: "Reference", w: 26 }, { h: "Scrap route", w: 16 },
+  ];
+  async function exportUnitsRange(mode, asXlsx) {
+    const raw = await api("units_export", { from: state.from, to: state.to, mode });
+    const types = selectedTypes();
+    const rows = raw.filter((u) => types.includes(u[3])).map((u) => [
+      u[0], u[1] || "", u[2] || "", TYPE_NAME[u[3]] || u[3], u[4], STATUS[u[5]] || u[5], u[6], u[7], u[8] ?? "", u[9] || "", u[10] || "",
+    ]);
+    const name = `nissan_${mode}_units_${fileTag()}`;
+    if (!rows.length) throw new Error(`No ${mode} units in this range.`);
+    if (asXlsx) {
+      const X = await loadXlsx();
+      const wb = X.utils.book_new();
+      const data = rows.map((r) => [r[0], r[1], r[2], r[3], xDate(r[4]), r[5], xDate(r[6]), r[7], r[8], r[9], r[10]]);
+      X.utils.book_append_sheet(wb, sheet(X, UNIT_COLS, data, scopeLines()), mode === "scrapped" ? "Scrapped Units" : "Received Units");
+      X.writeFile(wb, name + ".xlsx", { compression: true });
+    } else {
+      downloadCsv(name + ".csv", [UNIT_COLS.map((c) => c.h)].concat(rows), null);
+    }
+    return rows.length;
+  }
+
+  /* ---------- print / PDF ---------- */
+  function printReport() {
+    const { s } = summarize(selectedTypes());
+    $("printHead").innerHTML = `<h1>Nissan Scrap Analytics</h1>
+      <div>${esc(TYPE_LABEL[state.type])} | ${usDate(state.from)} to ${usDate(state.to)} | ${esc($("freshness").textContent.split("|").pop().trim())}</div>
+      <div>Logistics Warehouse, Inc. | Printed ${new Date().toLocaleDateString("en-US")}${state.name ? " by " + esc(state.name) : ""} | ${fmt(s.received)} received, ${fmt(s.scrapped)} scrapped</div>`;
+    renderOverview(); renderWeekly();
+    $("exportModal").hidden = true;
+    api("log", { note: `Printed report ${state.from} to ${state.to}` }).catch(() => {});
+    setTimeout(() => window.print(), 150);
+  }
+  window.addEventListener("beforeprint", () => {
+    Object.values(state.charts).forEach((c) => { try { c.resize(700, c.canvas.id === "onHandChart" ? 140 : 200); } catch (_) {} });
+  });
+  window.addEventListener("afterprint", () => {
+    Object.values(state.charts).forEach((c) => { try { c.resize(); } catch (_) {} });
+  });
+
+  /* ---------- export menu ---------- */
+  function openExport() {
+    $("exportScope").textContent = `Exports use the current filters: ${TYPE_LABEL[state.type]}, ${usDate(state.from)} to ${usDate(state.to)}.`;
+    setExportStatus("");
+    $("exportModal").hidden = false;
+  }
+  function setExportStatus(msg, isErr) {
+    const el = $("exportStatus"); el.textContent = msg || ""; el.classList.toggle("err", !!isErr);
+  }
+  let exporting = false;
+  async function onExportClick(e) {
+    const b = e.target.closest("[data-export]"); if (!b || exporting) return;
+    if (!state.dash) { setExportStatus("Data is still loading. Try again in a moment.", true); return; }
+    const kind = b.dataset.export;
+    if (kind === "print") { printReport(); return; }
+    exporting = true;
+    document.querySelectorAll("[data-export]").forEach((x) => { x.disabled = true; });
+    setExportStatus("Preparing your file...");
+    try {
+      let msg = "Download started.";
+      if (kind === "workbook") await exportWorkbook();
+      else if (kind === "daily-csv") await exportDaily(false);
+      else if (kind === "daily-xlsx") await exportDaily(true);
+      else {
+        const [mode, ext] = kind.split("-");
+        const n = await exportUnitsRange(mode, ext === "xlsx");
+        msg = `Download started: ${fmt(n)} units.`;
+      }
+      setExportStatus(msg);
+    } catch (err) {
+      if (err.message !== "SESSION_EXPIRED") setExportStatus(err.message, true);
+    } finally {
+      exporting = false;
+      document.querySelectorAll("[data-export]").forEach((x) => { x.disabled = false; });
+    }
   }
 
   /* ---------------- wire up ---------------- */
@@ -522,7 +779,10 @@
     $("unitCsvBtn").addEventListener("click", exportUnits);
     $("unitCloseBtn").addEventListener("click", () => { $("unitModal").hidden = true; });
     $("unitModal").addEventListener("click", (e) => { if (e.target.id === "unitModal") $("unitModal").hidden = true; });
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("unitModal").hidden = true; });
+    $("exportBtn").addEventListener("click", openExport);
+    $("exportCloseBtn").addEventListener("click", () => { $("exportModal").hidden = true; });
+    $("exportModal").addEventListener("click", (e) => { if (e.target.id === "exportModal") $("exportModal").hidden = true; else onExportClick(e); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("unitModal").hidden = true; $("exportModal").hidden = true; } });
 
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 

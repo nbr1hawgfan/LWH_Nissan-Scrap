@@ -1,6 +1,6 @@
 // Nissan Scrap PWA service worker
 // Caches the app shell only. Data calls always go to the network.
-const VERSION = "nissan-scrap-v1";
+const VERSION = "nissan-scrap-v2";
 const SHELL = [
   "./",
   "index.html",

@@ -198,3 +198,55 @@ td:last-child, th:last-child { padding-right: 12px; }
 @media (min-width: 1000px) {
   .kpis { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* ---------- export ---------- */
+.filter-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.filter-foot .freshness { margin-top: 0; }
+.btn-export {
+  flex-shrink: 0; background: var(--brand); color: #fff; border: none; border-radius: 8px;
+  padding: 10px 18px; font-size: 1rem; font-weight: 700; cursor: pointer;
+}
+.export-box { max-width: 640px; }
+.export-list { display: flex; flex-direction: column; }
+.export-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 14px;
+  padding: 14px 0; border-top: 1px solid var(--grid);
+}
+.export-name { font-weight: 700; font-size: 1rem; }
+.export-desc { font-size: 0.88rem; color: var(--ink-3); margin-top: 2px; }
+.export-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.btn-primary.sm { font-size: 0.9rem; padding: 9px 14px; }
+.export-status { min-height: 1.3em; font-weight: 600; color: var(--ink-2); margin: 10px 0 0; }
+.export-status.err { color: var(--brand-dark); }
+@media (max-width: 520px) {
+  .export-item { flex-direction: column; align-items: stretch; }
+  .export-actions > * { flex: 1; }
+}
+
+/* ---------- print report ---------- */
+.print-head { display: none; }
+@media print {
+  @page { size: letter portrait; margin: 0.5in; }
+  :root { font-size: 12px; }
+  body { background: #fff; }
+  .app-header, .tabs, .filters, .loading, .error.banner, .modal,
+  .card-head button, .btn-small, #flowTable, .notes, #tab-loads { display: none !important; }
+  .print-head { display: block; border-bottom: 3px solid var(--brand); padding-bottom: 8px; margin-bottom: 10px; }
+  .print-head h1 { margin: 0; font-size: 1.6rem; }
+  .print-head div { color: var(--ink-2); font-size: 0.95rem; margin-top: 2px; }
+  #tab-overview, #tab-weekly { display: block !important; padding: 0; max-width: none; }
+  .kpis { grid-template-columns: repeat(4, 1fr) !important; gap: 6px; }
+  .kpi { box-shadow: none; border: 1px solid var(--line); border-left-width: 4px; padding: 8px; break-inside: avoid; }
+  .kpi-value { font-size: 1.4rem; }
+  .card { box-shadow: none; border: 1px solid var(--line); break-inside: avoid; margin-top: 10px; padding: 10px; }
+  .chart-wrap { height: 200px !important; }
+  .chart-wrap.short { height: 140px !important; }
+  .legend { margin-bottom: 2px; }
+  #tab-weekly .card { break-inside: auto; }
+  th { position: static; }
+  .table-wrap { overflow: visible; }
+  table { font-size: 0.82rem; }
+  th, td { padding: 6px 5px; }
+  tr { break-inside: avoid; }
+  .badge { border: 1px solid currentColor; }
+}

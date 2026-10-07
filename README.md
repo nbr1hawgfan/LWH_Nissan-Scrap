@@ -30,6 +30,22 @@ This PWA
 | `manifest.json`, `icons/` | Install-to-home-screen |
 | `supabase/` | SQL and the Edge Function source, for the record |
 
+## Exports
+
+The **Export** button (next to the filters) uses the selected dates and unit type:
+
+| Export | Format | Source |
+|---|---|---|
+| Summary workbook | Excel: Summary, By Type, Daily, Weekly, Scrap Loads sheets | in-app data |
+| Printable report | Print / Save as PDF: KPIs, charts, by type, weekly | in-app data |
+| Daily data | CSV or Excel | in-app data |
+| Scrapped units | CSV or Excel, one row per unit scrapped in range | `units_export` (mode scrapped) |
+| Received units with status | CSV or Excel, one row per unit received in range | `units_export` (mode received) |
+
+The Weekly and Scrap Loads tabs and the load detail popup also keep their own CSV buttons.
+Excel files are built in the browser with SheetJS (loaded from cdnjs only when needed).
+Every export is written to `cust_app_access_log`.
+
 ## Users and PINs
 
 Users live in `cust_app_users` under customer `NISSAN` (same table and rules as TRAFO).
