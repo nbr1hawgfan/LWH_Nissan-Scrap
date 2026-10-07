@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Nissan Scrap Analytics</title>
+  <meta name="description" content="Nissan engine and transmission scrap analytics - Logistics Warehouse, Inc.">
+  <meta name="theme-color" content="#C41230">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Nissan Scrap">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
+  <script src="config.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-title">Nissan Scrap Analytics</div>
+      <div class="brand-sub">Logistics Warehouse, Inc.</div>
+    </div>
+    <div class="header-user" id="headerUser" hidden>
+      <span id="userName"></span>
+      <button class="btn-link" id="signOutBtn" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <!-- ================= SIGN IN ================= -->
+  <main id="loginView" class="login-view" hidden>
+    <form id="loginForm" class="login-card" autocomplete="off">
+      <h1>Sign in</h1>
+      <p class="muted">Enter your 6 to 8 digit PIN.</p>
+      <label for="pinInput" class="sr-only">PIN</label>
+      <input id="pinInput" class="pin-input" type="password" inputmode="numeric"
+             pattern="[0-9]*" maxlength="8" placeholder="PIN" required>
+      <button class="btn-primary" type="submit" id="loginBtn">Sign in</button>
+      <p class="error" id="loginError" role="alert"></p>
+    </form>
+  </main>
+
+  <!-- ================= APP ================= -->
+  <main id="appView" hidden>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="overview" role="tab" type="button">Overview</button>
+      <button class="tab" data-tab="weekly" role="tab" type="button">Weekly</button>
+      <button class="tab" data-tab="loads" role="tab" type="button">Scrap Loads</button>
+    </nav>
+
+    <section class="filters" aria-label="Filters">
+      <div class="filter-row">
+        <label class="field">
+          <span>Date range</span>
+          <select id="presetSelect">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="mtd">Month to date</option>
+            <option value="lastmonth">Last month</option>
+            <option value="90">Last 90 days</option>
+            <option value="ytd">Year to date</option>
+            <option value="365">Last 12 months</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <label class="field"><span>From</span><input type="date" id="fromDate"></label>
+        <label class="field"><span>To</span><input type="date" id="toDate"></label>
+      </div>
+      <div class="segmented" role="radiogroup" aria-label="Unit type">
+        <button type="button" class="seg active" data-type="BOTH" role="radio" aria-checked="true">Both</button>
+        <button type="button" class="seg" data-type="ENGINE" role="radio" aria-checked="false">Engines</button>
+        <button type="button" class="seg" data-type="TRANSMISSION" role="radio" aria-checked="false">Transmissions</button>
+      </div>
+      <div class="freshness" id="freshness"></div>
+    </section>
+
+    <div id="loading" class="loading" hidden>Loading...</div>
+    <p class="error banner" id="appError" role="alert" hidden></p>
+
+    <!-- ---------- OVERVIEW ---------- -->
+    <section id="tab-overview" class="tab-panel">
+      <div class="kpis" id="kpis"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 id="flowTitle">Received vs scrapped</h2>
+          <button class="btn-small" type="button" id="flowTableBtn">Show table</button>
+        </div>
+        <div class="legend" aria-hidden="true">
+          <span><i class="sw sw-in"></i>Received</span>
+          <span><i class="sw sw-scrap"></i>Scrapped</span>
+        </div>
+        <div class="chart-wrap"><canvas id="flowChart" aria-label="Units received and scrapped over time" role="img"></canvas></div>
+        <div class="table-wrap" id="flowTable" hidden></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Units on hand</h2></div>
+        <div class="chart-wrap short"><canvas id="onHandChart" aria-label="Units on hand at end of each day" role="img"></canvas></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>By type</h2></div>
+        <div class="table-wrap" id="typeTable"></div>
+      </div>
+
+      <div class="card notes">
+        <h2>How these numbers work</h2>
+        <dl>
+          <dt>Scrapped vs received</dt>
+          <dd>Units scrapped during the range divided by units received during the range. Scrapped units may have been received earlier.</dd>
+          <dt>Received-unit scrap rate</dt>
+          <dd>Of the units received during the range, the share that has gone to scrap so far. Recent ranges keep rising as units are dispositioned, so ranges ending in the last 21 days are marked as still developing.</dd>
+          <dt>Scrap share of inventory</dt>
+          <dd>Units scrapped during the range divided by units available: on hand at the start plus units received during the range.</dd>
+          <dt>Daily averages</dt>
+          <dd>Totals divided by operating days: days in the range with any receiving or scrap activity.</dd>
+          <dt>Scrap includes</dt>
+          <dd>SCRAP OUT loads and scrap transfers referenced as scrap. Engines and transmissions only; packaging and other items are excluded.</dd>
+        </dl>
+      </div>
+    </section>
+
+    <!-- ---------- WEEKLY ---------- -->
+    <section id="tab-weekly" class="tab-panel" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2>Weekly (Sunday to Saturday)</h2>
+          <button class="btn-small" type="button" id="weeklyCsvBtn">Export CSV</button>
+        </div>
+        <p class="muted small">Cohort scrap % follows the units received that week. Weeks that ended less than 21 days ago are still developing.</p>
+        <div class="table-wrap" id="weeklyTable"></div>
+      </div>
+    </section>
+
+    <!-- ---------- LOADS ---------- -->
+    <section id="tab-loads" class="tab-panel" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2>Scrap loads</h2>
+          <button class="btn-small" type="button" id="loadsCsvBtn">Export CSV</button>
+        </div>
+        <p class="muted small">Tap a load to see its units.</p>
+        <div class="table-wrap" id="loadsTable"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- unit detail -->
+  <div class="modal" id="unitModal" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="unitTitle">
+      <div class="card-head">
+        <h2 id="unitTitle">Load</h2>
+        <div>
+          <button class="btn-small" type="button" id="unitCsvBtn">Export CSV</button>
+          <button class="btn-small" type="button" id="unitCloseBtn">Close</button>
+        </div>
+      </div>
+      <div class="table-wrap" id="unitTable"></div>
+    </div>
+  </div>
+
+</body>
+</html>
